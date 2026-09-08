@@ -2198,7 +2198,13 @@ func (c *Container) fullCleanup(ctx context.Context, onlyStopped bool) error {
 	}
 
 	defer c.newContainerEvent(events.Cleanup)
-	return c.cleanup(ctx)
+	cleanupErr := c.cleanup(ctx)
+
+	if err := c.runLifecycleHooks(ctx, AfterCleanup); err != nil {
+		logrus.Errorf("%v", err)
+	}
+
+	return cleanupErr
 }
 
 // Unmount the container and free its resources

@@ -235,17 +235,24 @@ func init() {
 		return nil
 	})
 
-	libpod.RegisterLifecycleHook(libpod.AfterStop, func(ctx context.Context, info *libpod.LifecycleHookInfo) error {
+	// Registered on both AfterStop and AfterCleanup, not just AfterStop:
+	// AfterStop is skipped whenever conmon's exit-command cleanup process
+	// wins its race with an explicit "podman stop" (see the doc comment
+	// on libpod.AfterStop) -- which for a --rm container means it gets
+	// removed before AfterStop ever runs. AfterCleanup always runs, so
+	// registering there too guarantees this fires at least once.
+	// os.RemoveAll makes running it twice for the same job harmless.
+	removeCDIDir := func(ctx context.Context, info *libpod.LifecycleHookInfo) error {
 		// NOTE: if multiple containers share the same SLURM_JOB_ID, the
 		// first one to stop deletes the CDI dir out from under the rest,
 		// breaking their GPU access on any later inspect/restart. Not
 		// handled -- assumes one container per job.
 		//
 		// Reads info.Annotations, not os.Getenv: this hook runs during
-		// whatever "podman stop" invocation happens to stop the
-		// container, which may have a different (or no) SLURM_JOB_ID in
-		// its own environment than the container was actually created
-		// under. info.Annotations reflects the job id recorded on the
+		// whatever process ends up stopping/cleaning up the container,
+		// which may have a different (or no) SLURM_JOB_ID in its own
+		// environment than the container was actually created under.
+		// info.Annotations reflects the job id recorded on the
 		// container itself at create time (via injectAnnotation), so
 		// this always cleans up the right directory.
 		if jobID := info.Annotations["SLURM_JOB_ID"]; jobID != "" && usesNvidiaGPU(info) {
@@ -256,5 +263,7 @@ func init() {
 		}
 
 		return nil
-	})
+	}
+	libpod.RegisterLifecycleHook(libpod.AfterStop, removeCDIDir)
+	libpod.RegisterLifecycleHook(libpod.AfterCleanup, removeCDIDir)
 }

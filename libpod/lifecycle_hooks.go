@@ -26,7 +26,32 @@ const (
 	BeforeStop
 	// AfterStop runs once the container is confirmed stopped and the
 	// "stop" event has been recorded. Errors are logged, not fatal.
+	//
+	// AfterStop is NOT guaranteed to run for every container. conmon's
+	// exit-command mechanism (see fullCleanup in container_internal.go)
+	// races an explicit "podman stop" to tear the container down after
+	// its process dies: if that race resolves in the cleanup process's
+	// favor -- likely for --rm containers, since fullCleanup also removes
+	// them -- stopInternal's own syncContainer call sees ErrNoSuchCtr/
+	// ErrCtrRemoved and returns before ever reaching AfterStop (see the
+	// early return in stopInternal). A hook that must not miss a
+	// container's teardown should also register on AfterCleanup, which
+	// fullCleanup calls directly and unconditionally.
 	AfterStop
+	// AfterCleanup runs at the end of fullCleanup, which every container
+	// goes through exactly once after it stops (via conmon's registered
+	// exit-command, regardless of --rm) to unmount storage and tear down
+	// its network namespace. Unlike AfterStop, this is not skipped by the
+	// stop/cleanup race described above -- it runs from inside the
+	// cleanup path itself. Errors are logged, not fatal.
+	//
+	// This commonly fires for the same container transition AfterStop
+	// does (a normal "podman stop" is itself followed by conmon's
+	// exit-command running fullCleanup), so a hook registered on both
+	// stages should be idempotent -- expect to be called twice for most
+	// containers and exactly once for containers where AfterStop lost
+	// the race.
+	AfterCleanup
 )
 
 // LifecycleHookInfo is a read-only snapshot of container data handed to a
