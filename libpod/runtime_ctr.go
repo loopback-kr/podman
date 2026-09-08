@@ -980,6 +980,17 @@ func (r *Runtime) removeContainer(ctx context.Context, c *Container, opts ctrRmO
 		reportErrorf("cleaning up container %s: %w", c.ID(), err)
 	}
 
+	// Unlike fullCleanup (container_internal.go), this path is reached
+	// directly for --rm containers: conmon's exit-command runs "podman
+	// container cleanup --rm", which calls RemoveContainer straight
+	// through to here instead of Cleanup()/fullCleanup(), so fullCleanup
+	// never runs and its AfterCleanup call would otherwise never fire.
+	// Fire it here too so AfterCleanup-registered hooks still see this
+	// container's teardown before its config (e.g. annotations) is gone.
+	if err := c.runLifecycleHooks(ctx, AfterCleanup); err != nil {
+		logrus.Errorf("%v", err)
+	}
+
 	// Remove all active exec sessions
 	// removing the exec sessions might temporarily unlock the container's lock.  Using it
 	// after setting the state to ContainerStateRemoving will prevent that the container is
