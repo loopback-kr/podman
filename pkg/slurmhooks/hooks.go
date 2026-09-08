@@ -165,6 +165,15 @@ func injectAnnotation(jobID string) {
 // --device=nvidia.com/gpu=... (CDI) are allowed; raw device paths bypass
 // CDI entirely, so nvidia-ctk never sees them and the SLURM accounting
 // below has no idea the container is using a GPU.
+//
+// Callers must check usesNvidiaGPU first and skip this call if it's true:
+// info.DevicePaths comes from the container's final OCI spec
+// (runLifecycleHooks in libpod/lifecycle_hooks.go), which by BeforeStart
+// already has CDI's own resolved device nodes (e.g. /dev/nvidia-modeset)
+// merged into Linux.Devices alongside any genuinely raw ones. There is
+// nothing left at that point to tell a CDI-injected node apart from a
+// raw --device=/dev/nvidia0 by path alone, so this would otherwise flag
+// legitimate --gpus/--device=nvidia.com/gpu=... requests too.
 func rawNvidiaDevicePath(info *libpod.LifecycleHookInfo) string {
 	for _, dev := range info.DevicePaths {
 		if strings.HasPrefix(dev, "/dev/nvidia") {
@@ -208,6 +217,9 @@ func init() {
 	}
 
 	libpod.RegisterLifecycleHook(libpod.BeforeStart, func(ctx context.Context, info *libpod.LifecycleHookInfo) error {
+		if usesNvidiaGPU(info) {
+			return nil
+		}
 		if dev := rawNvidiaDevicePath(info); dev != "" {
 			return fmt.Errorf("Raw device path %q is not allowed for NVIDIA GPUs; use --gpus or --device=nvidia.com/gpu=... instead", dev)
 		}
