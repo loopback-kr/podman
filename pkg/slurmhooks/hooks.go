@@ -12,8 +12,8 @@
 // prestart hook keyed off an env var, a hand-rolled CDI spec, a future
 // flag this package doesn't know about -- would start life outside
 // SLURM's cgroup and be invisible to ConstrainDevices=yes regardless of
-// how it got its device access. Gating only on "is this a container
-// creation at all" (createSubcommandIndex) removes that entire class of
+// how it got its device access. Gating only on "is this a container/pod
+// creation at all" (isContainerCreate) removes that entire class of
 // bypass: enforcement happens once, at the kernel cgroup level, for every
 // container, independent of what it asked for or how.
 //
@@ -91,10 +91,79 @@ func injectLocalFlags(tokens ...string) {
 	os.Args = args
 }
 
+// nonContainerCreateParents lists subcommand groups that register their
+// own "create" leaf without it creating a container or pod: "podman
+// <group> create". createSubcommandIndex only looks for the bare
+// "create"/"run" token itself, with no awareness of which command group
+// it belongs to, so isContainerCreate below needs this to tell "podman
+// network create" apart from "podman pod create" or a bare "podman
+// create". "system connection create" is an alias for "connection add"
+// (cmd/podman/system/connection/add.go), hence "connection" rather than
+// "system" here -- the immediately preceding token is what matters.
+var nonContainerCreateParents = map[string]bool{
+	"network":    true,
+	"volume":     true,
+	"secret":     true,
+	"manifest":   true,
+	"farm":       true,
+	"connection": true,
+}
+
+// isContainerCreate reports whether idx (as returned by
+// createSubcommandIndex) marks an invocation that actually creates a
+// container or pod, as opposed to some other "podman <group> create"
+// command that happens to share the same leaf name -- see
+// nonContainerCreateParents. This is the gate init() uses to decide
+// whether an invocation needs SLURM cgroup nesting at all; getting it
+// wrong in the permissive direction would mean, e.g., "podman network
+// create" or "podman volume create" failing outright under a SLURM job
+// with "unknown flag: --cgroup-parent" the moment injectCgroupParent
+// tried to inject a flag those commands don't have -- exactly the
+// podman-compose failure mode this was written to catch, since compose
+// creates a network and often a volume before it ever creates a
+// container.
+func isContainerCreate(args []string, idx int) bool {
+	if idx == -1 {
+		return false
+	}
+	return idx == 0 || !nonContainerCreateParents[args[idx-1]]
+}
+
+// isPodCreate reports whether idx (as returned by createSubcommandIndex)
+// points at the "create" in "podman pod create ..." rather than a bare
+// "podman create"/"podman run". Callers should only call this once
+// isContainerCreate has already confirmed idx marks a real container/pod
+// creation. The distinction matters because "podman pod create" shares
+// its flag-registration code with "create"
+// (cmd/podman/common/create.go's DefineCreateFlags), but most of that
+// function's flags -- including --annotation and --cgroupns -- are gated
+// on entities.CreateMode, which "pod create" (entities.InfraMode) doesn't
+// use. Inserting a flag pod create doesn't have fails the whole command
+// with "unknown flag: ...", so callers that would otherwise inject one of
+// those need to special-case this. podman-compose, and anything else that
+// shares a pod across multiple containers, always calls "podman pod
+// create" first, so this isn't just a concern for direct pod-create use.
+func isPodCreate(args []string, idx int) bool {
+	return idx > 0 && args[idx-1] == "pod"
+}
+
 // injectAnnotation inserts "--annotation <key>=<value>" right after the
 // run/create subcommand token in os.Args (via injectLocalFlags). Safe to
 // call more than once per invocation.
+//
+// No-ops for anything isContainerCreate doesn't recognize as a real
+// container/pod creation (e.g. "podman network create", which has no
+// --annotation flag either) and for "pod create" specifically (see
+// isPodCreate) since that command has no --annotation flag at all. The
+// pod's own member containers (created via separate "podman create
+// --pod=..." invocations, which do carry --annotation) still get it; only
+// the pod object, its infra container, and non-container "create" leaves
+// don't.
 func injectAnnotation(key, value string) {
+	idx := createSubcommandIndex(os.Args)
+	if !isContainerCreate(os.Args, idx) || isPodCreate(os.Args, idx) {
+		return
+	}
 	injectLocalFlags("--annotation", key+"="+value)
 }
 
@@ -141,13 +210,23 @@ func injectCgroupManager(manager string) {
 	os.Args = args
 }
 
-// injectCgroupParent inserts "--cgroup-parent=<path>" and
-// "--cgroupns=host" right after the run/create subcommand token (via
-// injectLocalFlags). Forces the new container's cgroup to be created as a
-// descendant of path -- SLURM's own cgroup for this job's task -- instead
-// of wherever podman's cgroup-manager would otherwise place it (rootless
-// podman's usual user.slice/user@<uid>.service/.../<id>.scope, a sibling
-// of SLURM's cgroup, not a child of it). --cgroupns=host makes the
+// injectCgroupParent inserts "--cgroup-parent=<path>" right after the
+// run/create subcommand token (via injectLocalFlags), plus "--cgroupns=host"
+// for a plain "run"/"create" -- but not for "pod create": see isPodCreate.
+// --cgroup-parent is registered for both "create"/"run" and "pod create"
+// (unlike --annotation/--cgroupns, which "pod create" lacks entirely) and
+// is all the pod itself needs: its infra container's CgroupParent is
+// forced to the pod's own regardless of any --cgroupns setting
+// (pkg/specgen/generate/pod_create.go), and the infra container isn't
+// built from a second parsed CLI invocation this package could intercept
+// anyway.
+//
+// --cgroup-parent forces the new container's (or pod's) cgroup to be
+// created as a descendant of path -- SLURM's own cgroup for this job's
+// task -- instead of wherever podman's cgroup-manager would otherwise
+// place it (rootless podman's usual
+// user.slice/user@<uid>.service/.../<id>.scope, a sibling of SLURM's
+// cgroup, not a child of it). --cgroupns=host makes a "run"/"create"
 // container share the host's cgroup namespace instead of getting its own,
 // so it's actually visible as nested there (with a private namespace,
 // /proc/self/cgroup inside the container would just show "/" regardless
@@ -170,6 +249,10 @@ func injectCgroupManager(manager string) {
 // (crun: create `.../libpod-<id>`: Permission denied) rather than
 // silently leaving the container unconfined.
 func injectCgroupParent(path string) {
+	if isPodCreate(os.Args, createSubcommandIndex(os.Args)) {
+		injectLocalFlags("--cgroup-parent=" + path)
+		return
+	}
 	injectLocalFlags("--cgroup-parent="+path, "--cgroupns=host")
 }
 
@@ -180,11 +263,15 @@ func init() {
 		injectAnnotation("SLURM_JOB_ID", jobID)
 	}
 
-	// Applied to every container creation under a SLURM job, not just
-	// ones that look like they're requesting a GPU -- see the package
-	// doc for why this isn't gated on trying to guess intent from argv
-	// or env.
-	if jobID != "" && createSubcommandIndex(os.Args) != -1 {
+	// Applied to every container/pod creation under a SLURM job, not
+	// just ones that look like they're requesting a GPU -- see the
+	// package doc for why this isn't gated on trying to guess intent
+	// from argv or env. isContainerCreate (as opposed to a bare
+	// createSubcommandIndex(os.Args) != -1 check) is what keeps this
+	// from also firing on "podman network create", "podman volume
+	// create", and the other non-container commands that happen to
+	// share the "create" leaf name.
+	if jobID != "" && isContainerCreate(os.Args, createSubcommandIndex(os.Args)) {
 		parent, err := ownCgroupPath()
 		if err != nil {
 			// Fail closed: if we can't determine where SLURM's cgroup
