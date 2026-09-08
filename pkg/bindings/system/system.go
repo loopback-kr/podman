@@ -143,7 +143,7 @@ func Version(ctx context.Context, options *VersionOptions) (*types.SystemVersion
 	}
 
 	for _, c := range component.Components {
-		if c.Name == "Podman Engine for SLURM with NVIDIA Container Toolkit" {
+		if c.Name == "Podman Engine for SLURM" {
 			report.Server.APIVersion = c.Details["APIVersion"]
 		}
 	}
