@@ -9,3 +9,5 @@ services:
       - TZ=Asia/Seoul
     volumes:
       - .:/workspace
+    working_dir: /workspace
+    command: sh -c "make clean && make BUILDTAGS='cni seccomp systemd apparmor' PREFIX=/usr"

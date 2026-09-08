@@ -33,7 +33,7 @@ func VersionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	components := []types.ComponentVersion{{
-		Name:    "Podman Engine for SLURM with NVIDIA Container Runtime",
+		Name:    "Podman Engine for SLURM with NVIDIA Container Toolkit",
 		Version: running.Version,
 		Details: map[string]string{
 			"APIVersion":    version.APIVersion[version.Libpod][version.CurrentAPI].String(),

@@ -35,12 +35,3 @@ RUN curl -L -O https://golang.org/dl/go1.23.1.linux-amd64.tar.gz
 RUN tar -C /usr/local -xzf go1.23.1.linux-amd64.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 RUN go version
-
-# make clean && make BUILDTAGS="cni seccomp systemd apparmor" PREFIX=/usr
-
-# RUN mkdir -p /etc/containers
-# RUN cat <<EOF > /etc/containers/containers.conf
-# [network]
-# network_backend = "cni"
-# default_rootless_network_cmd = "slirp4netns"
-# EOF
