@@ -5,6 +5,15 @@
 // It is registered as a blank import from cmd/podman/main.go, so it only
 // needs to be linked in once; from then on every "podman run/start/stop"
 // on this host runs it automatically, in-process, for every container.
+//
+// GPU device isolation is NOT enforced by this package. It depends on
+// host-level containers.conf settings (cgroupns = "host" and
+// cgroup_manager = "cgroupfs") that keep every container inside the
+// SLURM job's own cgroup, so cgroup.conf's ConstrainDevices=yes applies
+// to it. Without those settings deployed on a node, --gpus/--device
+// requests here are not actually confined to the GPUs SLURM allocated to
+// the job -- see rawNvidiaDevicePath's doc for what this package's own
+// checks do and don't cover.
 package slurmhooks
 
 import (
@@ -167,9 +176,21 @@ func injectAnnotation(key, value string) {
 // rawNvidiaDevicePath returns the first raw host device path requested for
 // this container that looks like an NVIDIA device node (e.g.
 // --device=/dev/nvidia0), or "" if none was requested. Only --gpus and
-// --device=nvidia.com/gpu=... (CDI) are allowed; raw device paths bypass
-// CDI entirely, so nvidia-ctk never sees them and the SLURM accounting
-// below has no idea the container is using a GPU.
+// --device=nvidia.com/gpu=... (CDI) are allowed.
+//
+// This is not the GPU isolation boundary -- that's containers.conf's
+// cgroupns=host plus cgroup_manager=cgroupfs (see the deployment notes),
+// which puts every container inside the SLURM job's own cgroup so
+// cgroup.conf's ConstrainDevices=yes applies to it regardless of how the
+// device was requested, raw path or CDI. What this check actually buys:
+//   - raw paths skip nvidia-ctk entirely, so the container gets the
+//     device node but not the matching NVIDIA userspace driver libraries
+//     (libcuda.so etc.) CDI would have bind-mounted in -- the container
+//     would see the GPU but couldn't actually drive it;
+//   - raw paths never touch generateNvidiaCDI/injectAnnotation, so the
+//     SLURM_CDI_DIR accounting below never fires for them;
+//   - it's a second layer under the cgroup boundary, in case a node is
+//     ever running without the containers.conf settings applied.
 //
 // Callers must check usesNvidiaGPU first and skip this call if it's true:
 // info.DevicePaths comes from the container's final OCI spec
