@@ -1291,10 +1291,6 @@ func (c *Container) start() error {
 		logrus.Debugf("Starting container %s with command %v", c.ID(), c.config.Spec.Process.Args)
 	}
 
-	if err := c.runLifecycleHooks(context.Background(), BeforeStart); err != nil {
-		return err
-	}
-
 	if err := c.ociRuntime.StartContainer(c); err != nil {
 		return err
 	}
@@ -1327,10 +1323,6 @@ func (c *Container) start() error {
 	}
 
 	c.newContainerEvent(events.Start)
-
-	if err := c.runLifecycleHooks(context.Background(), AfterStart); err != nil {
-		logrus.Errorf("%v", err)
-	}
 
 	return c.save()
 }
@@ -1408,10 +1400,6 @@ func (c *Container) stopInternal(timeout uint, stoppedByUser bool) error {
 	// transition that is required to trigger restart policy during cleanup.
 
 	logrus.Debugf("Stopping ctr %s (timeout %d)", c.ID(), timeout)
-
-	if err := c.runLifecycleHooks(context.Background(), BeforeStop); err != nil {
-		return err
-	}
 
 	all, err := c.stopWithAll()
 	if err != nil {
@@ -1501,11 +1489,6 @@ func (c *Container) stopInternal(timeout uint, stoppedByUser bool) error {
 	}
 
 	c.newContainerEvent(events.Stop)
-
-	if err := c.runLifecycleHooks(context.Background(), AfterStop); err != nil {
-		logrus.Errorf("%v", err)
-	}
-
 	return c.waitForConmonToExitAndSave()
 }
 
@@ -2198,13 +2181,7 @@ func (c *Container) fullCleanup(ctx context.Context, onlyStopped bool) error {
 	}
 
 	defer c.newContainerEvent(events.Cleanup)
-	cleanupErr := c.cleanup(ctx)
-
-	if err := c.runLifecycleHooks(ctx, AfterCleanup); err != nil {
-		logrus.Errorf("%v", err)
-	}
-
-	return cleanupErr
+	return c.cleanup(ctx)
 }
 
 // Unmount the container and free its resources
