@@ -29,6 +29,7 @@ import (
 	"github.com/containers/podman/v5/pkg/domain/entities"
 	"github.com/containers/podman/v5/pkg/logiface"
 	"github.com/containers/podman/v5/pkg/rootless"
+	_ "github.com/containers/podman/v5/pkg/slurmhooks"
 	"github.com/containers/podman/v5/pkg/terminal"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"

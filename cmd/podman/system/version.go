@@ -91,7 +91,7 @@ func version(cmd *cobra.Command, _ []string) error {
 }
 
 const versionTemplate = `{{with .Client -}}
-Client:\tPodman Engine
+Client:\tPodman Engine for SLURM with NVIDIA Container Runtime
 Version:\t{{.Version}}
 API Version:\t{{.APIVersion}}
 Go Version:\t{{.GoVersion}}
@@ -103,7 +103,7 @@ OS/Arch:\t{{.OsArch}}
 
 {{- if .Server }}{{with .Server}}
 
-Server:\tPodman Engine
+Server:\tPodman Engine for SLURM with NVIDIA Container Runtime
 Version:\t{{.Version}}
 API Version:\t{{.APIVersion}}
 Go Version:\t{{.GoVersion}}

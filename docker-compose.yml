@@ -1,0 +1,11 @@
+services:
+  build:
+    image: podman-build
+    build: .
+    tty: true
+    stdin_open: true
+    privileged: true
+    environment:
+      - TZ=Asia/Seoul
+    volumes:
+      - .:/workspace
