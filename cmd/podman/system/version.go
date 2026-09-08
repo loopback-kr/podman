@@ -99,6 +99,7 @@ Go Version:\t{{.GoVersion}}
 Built:\t{{.BuiltTime}}
 {{if .BuildOrigin -}}Build Origin:\t{{.BuildOrigin}}\n{{end -}}
 OS/Arch:\t{{.OsArch}}
+Fork:\thttps://github.com/loopback-kr/podman
 {{- end}}
 
 {{- if .Server }}{{with .Server}}
@@ -111,5 +112,6 @@ Go Version:\t{{.GoVersion}}
 Built:\t{{.BuiltTime}}
 {{if .BuildOrigin -}}Build Origin:\t{{.BuildOrigin}}\n{{end -}}
 OS/Arch:\t{{.OsArch}}
+Fork:\thttps://github.com/loopback-kr/podman
 {{- end}}{{- end}}
 `
