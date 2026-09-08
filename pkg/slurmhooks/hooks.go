@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/containers/podman/v5/libpod"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"go.podman.io/common/pkg/config"
 )
@@ -78,9 +79,10 @@ func wantsGPU(args []string) bool {
 // container create/init -- the ordering problem a BeforeStart-time call
 // could not solve, since generateSpec() already runs before start().
 //
-// Writes to a job-scoped path (dir/nvidia.yaml, dir already created by the
-// caller) instead of the shared default so concurrent jobs on the same
-// node don't overwrite each other's spec.
+// Writes to a per-container path (dir/nvidia.yaml, dir already created by
+// the caller) instead of the shared default so concurrent containers --
+// even two under the same SLURM job -- don't overwrite each other's spec
+// or race over its deletion at stop time.
 func generateNvidiaCDI(dir string) {
 	ctx, cancel := context.WithTimeout(context.Background(), nvidiaCDITimeout)
 	defer cancel()
@@ -131,8 +133,8 @@ func injectCDISpecDirs(dirs []string) {
 	os.Args = args
 }
 
-// injectAnnotation inserts "--annotation SLURM_JOB_ID=<jobID>" right after
-// the run/create subcommand token in os.Args. Unlike --cdi-spec-dir,
+// injectAnnotation inserts "--annotation <key>=<value>" right after the
+// run/create subcommand token in os.Args. Unlike --cdi-spec-dir,
 // --annotation is a *local* flag registered only on run/create
 // (cmd/podman/common/create.go), not a persistent flag on rootCmd
 // (cmd.PersistentFlags(), see root.go's pFlags), so cobra only recognizes
@@ -144,14 +146,17 @@ func injectCDISpecDirs(dirs []string) {
 //
 // Uses createSubcommandIndex to find where run/create starts -- see that
 // function's doc for why (and its stated limitations, e.g. no support
-// for aliases like "container run").
-func injectAnnotation(jobID string) {
+// for aliases like "container run"). Safe to call more than once per
+// invocation (e.g. once for SLURM_JOB_ID, once for SLURM_CDI_DIR): each
+// call re-finds the subcommand index against the current os.Args and
+// inserts its own pair there.
+func injectAnnotation(key, value string) {
 	idx := createSubcommandIndex(os.Args)
 	if idx == -1 {
 		return
 	}
 
-	extra := []string{"--annotation", "SLURM_JOB_ID=" + jobID}
+	extra := []string{"--annotation", key + "=" + value}
 	args := make([]string, 0, len(os.Args)+len(extra))
 	args = append(args, os.Args[:idx+1]...)
 	args = append(args, extra...)
@@ -203,14 +208,22 @@ func init() {
 	jobID := os.Getenv("SLURM_JOB_ID")
 
 	if jobID != "" {
-		injectAnnotation(jobID)
+		injectAnnotation("SLURM_JOB_ID", jobID)
 	}
 
+	// The CDI dir is keyed by a fresh UUID per invocation, not by jobID:
+	// jobID alone would be shared by every container in the same SLURM
+	// job, so the first one to stop (removeCDIDir below) would delete
+	// the CDI dir out from under the others. A per-container ID avoids
+	// that entirely -- each container gets, and later cleans up, its
+	// own directory.
 	if jobID != "" && wantsGPU(os.Args) {
-		dir := filepath.Join("/var/run/cdi", jobID)
+		cdiDirID := uuid.NewString()
+		dir := filepath.Join("/var/run/cdi", cdiDirID)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			logrus.Warnf("Failed to create CDI directory %s: %v", dir, err)
 		} else {
+			injectAnnotation("SLURM_CDI_DIR", cdiDirID)
 			generateNvidiaCDI(dir)
 			injectCDISpecDirs(append(resolvedCDISpecDirs(), dir))
 		}
@@ -241,22 +254,20 @@ func init() {
 	// on libpod.AfterStop) -- which for a --rm container means it gets
 	// removed before AfterStop ever runs. AfterCleanup always runs, so
 	// registering there too guarantees this fires at least once.
-	// os.RemoveAll makes running it twice for the same job harmless.
+	// os.RemoveAll makes running it twice for the same container harmless.
 	removeCDIDir := func(ctx context.Context, info *libpod.LifecycleHookInfo) error {
-		// NOTE: if multiple containers share the same SLURM_JOB_ID, the
-		// first one to stop deletes the CDI dir out from under the rest,
-		// breaking their GPU access on any later inspect/restart. Not
-		// handled -- assumes one container per job.
-		//
-		// Reads info.Annotations, not os.Getenv: this hook runs during
-		// whatever process ends up stopping/cleaning up the container,
-		// which may have a different (or no) SLURM_JOB_ID in its own
-		// environment than the container was actually created under.
-		// info.Annotations reflects the job id recorded on the
-		// container itself at create time (via injectAnnotation), so
-		// this always cleans up the right directory.
-		if jobID := info.Annotations["SLURM_JOB_ID"]; jobID != "" && usesNvidiaGPU(info) {
-			dir := filepath.Join("/var/run/cdi", jobID)
+		// Reads info.Annotations, not a package-level variable: this hook
+		// runs during whatever process ends up stopping/cleaning up the
+		// container, which may be a different invocation (with no
+		// SLURM_CDI_DIR of its own) than the one that created it.
+		// info.Annotations reflects what was recorded on the container
+		// itself at create time (via injectAnnotation), so this always
+		// finds the right directory -- and because SLURM_CDI_DIR is a
+		// fresh UUID minted per container rather than shared per
+		// SLURM_JOB_ID, removing it here can never affect another
+		// container's CDI spec, even one from the same job.
+		if cdiDirID := info.Annotations["SLURM_CDI_DIR"]; cdiDirID != "" && usesNvidiaGPU(info) {
+			dir := filepath.Join("/var/run/cdi", cdiDirID)
 			if err := os.RemoveAll(dir); err != nil {
 				logrus.Warnf("Failed to remove CDI directory %s: %v", dir, err)
 			}
