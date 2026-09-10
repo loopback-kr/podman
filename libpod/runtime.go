@@ -609,7 +609,16 @@ func makeRuntime(ctx context.Context, runtime *Runtime) (retErr error) {
 			if became {
 				// Check if the pause process was created.  If it was created, then
 				// move it to its own systemd scope.
-				systemdCommon.MovePauseProcessToScope(pausePid)
+				//
+				// On hosts where pam_systemd never ran for this login (e.g. Slurm
+				// compute nodes inheriting the job's cgroup), there is no systemd
+				// user session and no $XDG_RUNTIME_DIR/bus, so this would always
+				// fail and log a warning. Skip quietly in that case.
+				if systemd.IsSystemdSessionValid(rootless.GetRootlessUID()) {
+					systemdCommon.MovePauseProcessToScope(pausePid)
+				} else {
+					logrus.Debug("no valid systemd user session; leaving pause process in the current cgroup")
+				}
 
 				// gocritic complains because defer is not run on os.Exit()
 				// However this is fine because the lock is released anyway when the process exits

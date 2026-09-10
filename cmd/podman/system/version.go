@@ -91,7 +91,7 @@ func version(cmd *cobra.Command, _ []string) error {
 }
 
 const versionTemplate = `{{with .Client -}}
-Client:\tPodman Engine
+Client:\tPodman Engine for SLURM
 Version:\t{{.Version}}
 API Version:\t{{.APIVersion}}
 Go Version:\t{{.GoVersion}}
@@ -99,11 +99,12 @@ Go Version:\t{{.GoVersion}}
 Built:\t{{.BuiltTime}}
 {{if .BuildOrigin -}}Build Origin:\t{{.BuildOrigin}}\n{{end -}}
 OS/Arch:\t{{.OsArch}}
+Fork:\thttps://github.com/loopback-kr/podman
 {{- end}}
 
 {{- if .Server }}{{with .Server}}
 
-Server:\tPodman Engine
+Server:\tPodman Engine for SLURM
 Version:\t{{.Version}}
 API Version:\t{{.APIVersion}}
 Go Version:\t{{.GoVersion}}
@@ -111,5 +112,6 @@ Go Version:\t{{.GoVersion}}
 Built:\t{{.BuiltTime}}
 {{if .BuildOrigin -}}Build Origin:\t{{.BuildOrigin}}\n{{end -}}
 OS/Arch:\t{{.OsArch}}
+Fork:\thttps://github.com/loopback-kr/podman
 {{- end}}{{- end}}
 `
