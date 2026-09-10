@@ -9,11 +9,12 @@ import (
 	"os"
 
 	"github.com/containers/podman/v5/pkg/rootless"
+	"github.com/containers/podman/v5/pkg/systemd"
 	"github.com/containers/podman/v5/pkg/util"
 	"github.com/sirupsen/logrus"
 	"go.podman.io/common/pkg/cgroups"
 	"go.podman.io/common/pkg/config"
-	"go.podman.io/common/pkg/systemd"
+	systemdCommon "go.podman.io/common/pkg/systemd"
 	"go.podman.io/storage/pkg/unshare"
 	"golang.org/x/sys/unix"
 )
@@ -22,7 +23,7 @@ import (
 const defaultRunPath = "/run"
 
 func (ic *ContainerEngine) SetupRootless(_ context.Context, noMoveProcess bool, cgroupMode string) error {
-	runsUnderSystemd := systemd.RunsOnSystemd()
+	runsUnderSystemd := systemdCommon.RunsOnSystemd()
 	if !runsUnderSystemd {
 		isPid1 := os.Getpid() == 1
 		if _, found := os.LookupEnv("container"); isPid1 || found {
@@ -55,7 +56,7 @@ func (ic *ContainerEngine) SetupRootless(_ context.Context, noMoveProcess bool, 
 				}
 				unitName := fmt.Sprintf("podman-%d.scope", os.Getpid())
 				if runsUnderSystemd || conf.Engine.CgroupManager == config.SystemdCgroupsManager {
-					if err := systemd.RunUnderSystemdScope(os.Getpid(), "user.slice", unitName); err != nil {
+					if err := systemdCommon.RunUnderSystemdScope(os.Getpid(), "user.slice", unitName); err != nil {
 						logrus.Debugf("Failed to add podman to systemd sandbox cgroup: %v", err)
 					}
 				}
@@ -107,7 +108,15 @@ func (ic *ContainerEngine) SetupRootless(_ context.Context, noMoveProcess bool, 
 		return fmt.Errorf("fatal error, invalid internal status, unable to create a new pause process: %w. Try running %q and if that doesn't work reboot to recover", err, os.Args[0]+" system migrate")
 	}
 	if !noMoveProcess {
-		systemd.MovePauseProcessToScope(pausePidPath)
+		// On hosts where pam_systemd never ran for this login (e.g. Slurm
+		// compute nodes inheriting the job's cgroup), there is no systemd
+		// user session and no $XDG_RUNTIME_DIR/bus, so this would always
+		// fail and log a warning on every command. Skip quietly in that case.
+		if systemd.IsSystemdSessionValid(rootless.GetRootlessUID()) {
+			systemdCommon.MovePauseProcessToScope(pausePidPath)
+		} else {
+			logrus.Debug("no valid systemd user session; leaving pause process in the current cgroup")
+		}
 	}
 	if became {
 		os.Exit(ret)
