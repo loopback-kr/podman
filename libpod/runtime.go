@@ -614,6 +614,10 @@ func makeRuntime(ctx context.Context, runtime *Runtime) (retErr error) {
 				// compute nodes inheriting the job's cgroup), there is no systemd
 				// user session and no $XDG_RUNTIME_DIR/bus, so this would always
 				// fail and log a warning. Skip quietly in that case.
+				//
+				// This fork targets Slurm-only deployments where users cannot log in
+				// via SSH, so the seat0-based session check below reliably reports
+				// no session there.
 				if systemd.IsSystemdSessionValid(rootless.GetRootlessUID()) {
 					systemdCommon.MovePauseProcessToScope(pausePid)
 				} else {
