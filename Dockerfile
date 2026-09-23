@@ -6,7 +6,6 @@ RUN apt-get update && apt-get install -y \
   btrfs-progs \
   containernetworking-plugins \
   gcc \
-  git \
   go-md2man \
   iptables \
   libassuan-dev \
@@ -31,7 +30,8 @@ RUN apt-get update && apt-get install -y \
   podman \
 && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN curl -L -O https://golang.org/dl/go1.23.1.linux-amd64.tar.gz
-RUN tar -C /usr/local -xzf go1.23.1.linux-amd64.tar.gz
+ARG GO_VERSION=1.25.0
+RUN curl -L -O https://golang.org/dl/go${GO_VERSION}.linux-amd64.tar.gz
+RUN tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz
 ENV PATH="/usr/local/go/bin:${PATH}"
 RUN go version

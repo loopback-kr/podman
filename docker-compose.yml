@@ -11,3 +11,21 @@ services:
       - .:/workspace
     working_dir: /workspace
     command: sh -c "make clean && make BUILDTAGS='cni seccomp systemd apparmor' PREFIX=/usr"
+
+  vscode:
+    image: vscode
+    build:
+      context: .
+      dockerfile: Dockerfile
+    tty: true
+    stdin_open: true
+    pid: host
+    hostname: Container
+    environment:
+      - TZ=Asia/Seoul
+    volumes:
+      - $HOME/.gitconfig:/root/.gitconfig:ro
+      - $HOME/.cache:/root/.cache
+      - $HOME/.claude:/root/.claude
+      - .:/workspace
+    working_dir: /workspace
