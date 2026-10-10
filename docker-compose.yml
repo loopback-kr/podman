@@ -10,7 +10,7 @@ services:
     volumes:
       - .:/workspace
     working_dir: /workspace
-    command: sh -c "make clean && make BUILDTAGS='cni seccomp systemd apparmor' PREFIX=/usr"
+    command: sh -c "make clean && make BUILDTAGS='cni seccomp systemd apparmor containers_image_openpgp' PREFIX=/usr"
 
   vscode:
     image: vscode
