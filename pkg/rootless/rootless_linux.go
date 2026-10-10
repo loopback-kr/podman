@@ -237,7 +237,11 @@ func becomeRootInUserNS(pausePid string) (_ bool, _ int, retErr error) {
 						}
 					}
 					if !isShared {
-						logrus.Warningf("%q is not a shared mount, this could cause issues or missing mounts with rootless containers", m.Mountpoint)
+						// On Slurm compute nodes jobs typically run in a private mount
+						// namespace, so "/" is not shared there. That only affects mount
+						// propagation into containers, which batch jobs rarely rely on,
+						// so don't warn on every command.
+						logrus.Debugf("%q is not a shared mount, this could cause issues or missing mounts with rootless containers", m.Mountpoint)
 					}
 					break
 				}
