@@ -42,6 +42,8 @@ type imageCopier struct {
 	compressionFormat             *compressiontypes.Algorithm // Compression algorithm to use, if the user explicitly requested one, or nil.
 	compressionLevel              *int
 	requireCompressionFormatMatch bool
+	// layerCommitTracker, if not nil, reports progress of committing layers into the destination; set only while copyLayers runs.
+	layerCommitTracker *layerCommitTracker
 }
 
 type copySingleImageOptions struct {
@@ -512,6 +514,15 @@ func (ic *imageCopier) copyLayers(ctx context.Context) ([]compressiontypes.Algor
 		progressPool := ic.c.newProgressPool()
 		defer progressPool.Wait()
 
+		// The tracker may hold on to progress bars of layers which have been received but not committed yet;
+		// it must release them after all layers are copied, and before progressPool.Wait().
+		tracker, finishTracker := ic.c.layerCommitTrackerFor()
+		ic.layerCommitTracker = tracker
+		defer func() {
+			ic.layerCommitTracker = nil
+			finishTracker()
+		}()
+
 		// Ensure we wait for all layers to be copied. progressPool.Wait() must not be called while any of the copyLayerHelpers interact with the progressPool.
 		defer copyGroup.Wait()
 
@@ -844,11 +855,29 @@ func (ic *imageCopier) copyLayer(ctx context.Context, srcInfo types.BlobInfo, to
 
 	// Fallback: copy the layer, computing the diffID if we need to do so
 	return func() (types.BlobInfo, digest.Digest, error) { // A scope for defer
-		bar, err := ic.c.createProgressBar(pool, false, srcInfo, "blob", "done")
+		// If the destination commits layers after receiving them (e.g. extracting them), report that progress as well,
+		// so that the output does not look stuck after the whole blob has been received.
+		tracker := ic.layerCommitTracker
+		trackCommit := tracker != nil && srcInfo.Size > 0 && !emptyLayer
+		var bar *progressBar
+		var err error
+		if trackCommit && ic.c.progressOutput != io.Discard {
+			bar, err = tracker.createProgressBar(pool, srcInfo, layerIndex)
+		} else {
+			bar, err = ic.c.createProgressBar(pool, false, srcInfo, "blob", "done")
+			if err == nil && trackCommit {
+				tracker.registerWithoutBar(srcInfo, layerIndex)
+			}
+		}
 		if err != nil {
 			return types.BlobInfo{}, "", err
 		}
-		defer bar.Abort(false)
+		barHandedOff := false
+		defer func() {
+			if !barHandedOff {
+				bar.Abort(false)
+			}
+		}()
 
 		srcStream, srcBlobSize, err := ic.c.rawSource.GetBlob(ctx, srcInfo, ic.c.blobInfoCache)
 		if err != nil {
@@ -886,7 +915,11 @@ func (ic *imageCopier) copyLayer(ctx context.Context, srcInfo types.BlobInfo, to
 			}
 		}
 
-		bar.mark100PercentComplete()
+		if trackCommit && tracker.blobReceived(layerIndex) {
+			barHandedOff = true // The tracker completes the bar when the layer is committed.
+		} else {
+			bar.mark100PercentComplete()
+		}
 		return blobInfo, diffID, nil
 	}()
 }

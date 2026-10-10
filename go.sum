@@ -235,6 +235,8 @@ github.com/letsencrypt/boulder v0.0.0-20240620165639-de9c06129bec h1:2tTW6cDth2T
 github.com/letsencrypt/boulder v0.0.0-20240620165639-de9c06129bec/go.mod h1:TmwEoGCwIti7BCeJ9hescZgRtatxRE+A72pCoPfmcfk=
 github.com/linuxkit/virtsock v0.0.0-20241009230534-cb6a20cc0422 h1:XvRuyDDRvi+UDxHN/M4MW4HxjmNVMmUKQj/+AbgsYgk=
 github.com/linuxkit/virtsock v0.0.0-20241009230534-cb6a20cc0422/go.mod h1:JLgfq4XMVbvfNlAXla/41lZnp21O72a/wWHGJefAvgQ=
+github.com/loopback-kr/container-libs/image/v5 v5.39.3-0.20261010131330-2270532235c6 h1:PH0SDaZsMQ4v4qAt8IBPZ35Etyb2y9q5O0n505CAuhA=
+github.com/loopback-kr/container-libs/image/v5 v5.39.3-0.20261010131330-2270532235c6/go.mod h1:SlaR6Pra1ATIx4BcuZ16oafb3QcCHISaKcJbtlN/G/0=
 github.com/loopback-kr/container-libs/storage v1.62.1-0.20261010103040-f2f008fe696b h1:px+CYMFSF93TKe0B5e5WzWrsdMQFG7x4F6+2ur0FRxU=
 github.com/loopback-kr/container-libs/storage v1.62.1-0.20261010103040-f2f008fe696b/go.mod h1:A3UBK0XypjNZ6pghRhuxg62+2NIm5lcUGv/7XyMhMUI=
 github.com/lufia/plan9stats v0.0.0-20240909124753-873cd0166683 h1:7UMa6KCCMjZEMDtTVdcGu0B1GmmC7QJKiCCjyTAWQy0=

@@ -180,6 +180,31 @@ type CommitOptions struct {
 	Timestamp *time.Time
 }
 
+// LayerCommitProgress describes the progress of committing (e.g. extracting) a layer
+// into a destination, after its blob has been received.
+// This API is experimental and can be changed without bumping the major version number.
+type LayerCommitProgress struct {
+	// LayerIndex is the index of the layer in the source image, as passed in PutBlobOptions.LayerIndex
+	// or TryReusingBlobOptions.LayerIndex.
+	LayerIndex int
+	// Offset is the number of bytes of the layer's input consumed so far.
+	Offset int64
+	// Size is the total size of the layer's input, or -1 if unknown.
+	Size int64
+	// Done is set when the layer has been committed (or committing failed); no further events
+	// are reported for this LayerIndex.
+	Done bool
+}
+
+// LayerCommitProgressReporter is an optional interface implemented by destinations
+// which commit layers after receiving their blobs, and can report progress of that work.
+// This API is experimental and can be changed without bumping the major version number.
+type LayerCommitProgressReporter interface {
+	// SetLayerCommitProgressCallback sets a callback to report layer commit progress, or removes it if fn is nil.
+	// fn may be called from any goroutine, and must not block.
+	SetLayerCommitProgressCallback(fn func(LayerCommitProgress))
+}
+
 // ImageSourceChunk is a portion of a blob.
 // This API is experimental and can be changed without bumping the major version number.
 type ImageSourceChunk struct {

@@ -56,18 +56,10 @@ type progressBar struct {
 // by convention, we don't leave progress bars in partial state when fully done
 // (even if we copied much less data than anticipated).
 func (c *copier) createProgressBar(pool *mpb.Progress, partial bool, info types.BlobInfo, kind string, onComplete string) (*progressBar, error) {
-	// shortDigestLen is the length of the digest used for blobs.
-	const shortDigestLen = 12
-
 	if err := info.Digest.Validate(); err != nil { // digest.Digest.Encoded() panics on failure, so validate explicitly.
 		return nil, err
 	}
-	prefix := fmt.Sprintf("Copying %s %s", kind, info.Digest.Encoded())
-	// Truncate the prefix (chopping of some part of the digest) to make all progress bars aligned in a column.
-	maxPrefixLen := len("Copying blob ") + shortDigestLen
-	if len(prefix) > maxPrefixLen {
-		prefix = prefix[:maxPrefixLen]
-	}
+	prefix := progressBarPrefix(kind, info)
 
 	// onComplete will replace prefix once the bar/spinner has completed
 	onComplete = prefix + " " + onComplete
@@ -115,6 +107,20 @@ func (c *copier) createProgressBar(pool *mpb.Progress, partial bool, info types.
 		Bar:          bar,
 		originalSize: info.Size,
 	}, nil
+}
+
+// progressBarPrefix returns the "Copying ..." prefix of a progress bar for info, which must have a valid digest.
+func progressBarPrefix(kind string, info types.BlobInfo) string {
+	// shortDigestLen is the length of the digest used for blobs.
+	const shortDigestLen = 12
+
+	prefix := fmt.Sprintf("Copying %s %s", kind, info.Digest.Encoded())
+	// Truncate the prefix (chopping of some part of the digest) to make all progress bars aligned in a column.
+	maxPrefixLen := len("Copying blob ") + shortDigestLen
+	if len(prefix) > maxPrefixLen {
+		prefix = prefix[:maxPrefixLen]
+	}
+	return prefix
 }
 
 // printCopyInfo prints a "Copying ..." message on the copier if the output is

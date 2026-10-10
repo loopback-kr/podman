@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	digest "github.com/opencontainers/go-digest"
 	imgspecv1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -77,6 +78,9 @@ type storageImageDestination struct {
 	// A storage destination may be used concurrently, due to HasThreadSafePutBlob.
 	lock          sync.Mutex // Protects lockProtected
 	lockProtected storageImageDestinationLockProtected
+
+	// layerCommitProgress, if set, receives progress reports while layers are committed; see SetLayerCommitProgressCallback.
+	layerCommitProgress atomic.Pointer[func(private.LayerCommitProgress)]
 }
 
 // storageImageDestinationLockProtected contains storageImageDestination data which might be
@@ -207,6 +211,48 @@ func (s *storageImageDestination) Close() error {
 
 func (s *storageImageDestination) computeNextBlobCacheFile() string {
 	return filepath.Join(s.directory, fmt.Sprintf("%d", s.nextTempFileID.Add(1)))
+}
+
+var _ private.LayerCommitProgressReporter = (*storageImageDestination)(nil)
+
+// SetLayerCommitProgressCallback sets a callback to report layer commit progress, or removes it if fn is nil.
+// fn may be called from any goroutine, and must not block.
+func (s *storageImageDestination) SetLayerCommitProgressCallback(fn func(private.LayerCommitProgress)) {
+	if fn == nil {
+		s.layerCommitProgress.Store(nil)
+		return
+	}
+	s.layerCommitProgress.Store(&fn)
+}
+
+// reportLayerCommitProgress reports p to the callback set by SetLayerCommitProgressCallback, if any.
+func (s *storageImageDestination) reportLayerCommitProgress(p private.LayerCommitProgress) {
+	if fn := s.layerCommitProgress.Load(); fn != nil {
+		(*fn)(p)
+	}
+}
+
+// layerCommitProgressInterval is the minimum interval between consecutive progress reports for a single layer.
+const layerCommitProgressInterval = 100 * time.Millisecond
+
+// layerCommitProgressReader wraps a layer's input and reports how much of it has been consumed.
+type layerCommitProgressReader struct {
+	r          io.Reader
+	s          *storageImageDestination
+	index      int
+	size       int64
+	offset     int64
+	lastReport time.Time
+}
+
+func (r *layerCommitProgressReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	r.offset += int64(n)
+	if now := time.Now(); now.Sub(r.lastReport) >= layerCommitProgressInterval {
+		r.lastReport = now
+		r.s.reportLayerCommitProgress(private.LayerCommitProgress{LayerIndex: r.index, Offset: r.offset, Size: r.size})
+	}
+	return n, err
 }
 
 // NoteOriginalOCIConfig provides the config of the image, as it exists on the source, BUT converted to OCI format,
@@ -926,6 +972,7 @@ func (s *storageImageDestination) queueOrCommit(index int, info addedLayerInfo) 
 		if stopQueue, err := s.commitLayer(index, info, -1); stopQueue || err != nil {
 			return err
 		}
+		s.reportLayerCommitProgress(private.LayerCommitProgress{LayerIndex: index, Size: -1, Done: true})
 		s.lock.Lock()
 		index++
 	}
@@ -1269,6 +1316,15 @@ func (s *storageImageDestination) createNewLayer(index int, trusted trustedLayer
 		return nil, fmt.Errorf("opening file %q: %w", filename, err)
 	}
 	defer file.Close()
+	var diff io.Reader = file
+	if s.layerCommitProgress.Load() != nil {
+		var fileSize int64 = -1
+		if fi, err := file.Stat(); err == nil {
+			fileSize = fi.Size()
+		}
+		s.reportLayerCommitProgress(private.LayerCommitProgress{LayerIndex: index, Offset: 0, Size: fileSize})
+		diff = &layerCommitProgressReader{r: file, s: s, index: index, size: fileSize, lastReport: time.Now()}
+	}
 	// Build the new layer using the diff, regardless of where it came from.
 	// TODO: This can take quite some time, and should ideally be cancellable using ctx.Done().
 	layer, _, err := s.imageRef.transport.store.PutLayer(newLayerID, parentLayer, nil, "", false, &storage.LayerOptions{
@@ -1276,7 +1332,7 @@ func (s *storageImageDestination) createNewLayer(index int, trusted trustedLayer
 		OriginalSize:   trustedOriginalSize, // nil in many cases
 		// This might be "" if trusted.layerIdentifiedByTOC; in that case PutLayer will compute the value from the stream.
 		UncompressedDigest: trusted.diffID,
-	}, file)
+	}, diff)
 	if err != nil && !errors.Is(err, storage.ErrDuplicateID) {
 		return nil, fmt.Errorf("adding layer with blob %s: %w", trusted.logString(), err)
 	}
@@ -1463,6 +1519,7 @@ func (s *storageImageDestination) CommitWithOptions(ctx context.Context, options
 		} else if stopQueue {
 			return fmt.Errorf("Internal error: storageImageDestination.CommitWithOptions(): commitLayer() not ready to commit for layer %q", blob.Digest)
 		}
+		s.reportLayerCommitProgress(private.LayerCommitProgress{LayerIndex: i, Size: -1, Done: true})
 	}
 	var lastLayer string
 	if len(layerBlobs) > 0 { // Zero-layer images rarely make sense, but it is technically possible, and may happen for non-image artifacts.

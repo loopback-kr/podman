@@ -194,3 +194,5 @@ require (
 )
 
 replace go.podman.io/storage => github.com/loopback-kr/container-libs/storage v1.62.1-0.20261010103040-f2f008fe696b
+
+replace go.podman.io/image/v5 => github.com/loopback-kr/container-libs/image/v5 v5.39.3-0.20261010131330-2270532235c6
