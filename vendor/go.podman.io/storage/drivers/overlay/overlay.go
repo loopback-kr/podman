@@ -1927,9 +1927,13 @@ func (d *Driver) get(id string, disableShifting bool, options graphdriver.MountO
 
 	// overlay has a check in place to prevent mounting the same file system twice
 	// if volatile was already specified. Yes, the kernel repeats the "work" component.
-	err = os.RemoveAll(filepath.Join(workdir, "work", "incompat", "volatile"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", err
+	// The workdir is only used for read-write mounts; layers in an additional
+	// store are mounted read-only and their workdir may not be accessible.
+	if readWrite {
+		err = os.RemoveAll(filepath.Join(workdir, "work", "incompat", "volatile"))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
 	}
 
 	flags, data := mount.ParseOptions(mountData)
