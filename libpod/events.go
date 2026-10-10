@@ -5,10 +5,14 @@ package libpod
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/containers/podman/v5/libpod/define"
 	"github.com/containers/podman/v5/libpod/events"
+	"github.com/containers/podman/v5/pkg/rootless"
 	"github.com/sirupsen/logrus"
 )
 
@@ -17,6 +21,8 @@ func (r *Runtime) newEventer() (events.Eventer, error) {
 	if r.config.Engine.EventsLogFilePath == "" {
 		// default, use path under tmpdir when none was explicitly set by the user
 		r.config.Engine.EventsLogFilePath = filepath.Join(r.config.Engine.TmpDir, "events", "events.log")
+	} else {
+		r.config.Engine.EventsLogFilePath = expandEventsLogFilePath(r.config.Engine.EventsLogFilePath, rootless.GetRootlessUID())
 	}
 	options := events.EventerOptions{
 		EventerType:    r.config.Engine.EventsLogger,
@@ -24,6 +30,19 @@ func (r *Runtime) newEventer() (events.Eventer, error) {
 		LogFileMaxSize: r.config.Engine.EventsLogMaxSize(),
 	}
 	return events.NewEventer(options)
+}
+
+// expandEventsLogFilePath expands $UID (as rootlessUID) and environment variables such as
+// $HOME and $USER in path, the same way storage.conf expands rootless_storage_path, so that
+// a single events_logfile_path in a system-wide containers.conf can point to per-user files.
+func expandEventsLogFilePath(path string, rootlessUID int) string {
+	if !strings.Contains(path, "$") {
+		return path
+	}
+	uid := strconv.Itoa(rootlessUID)
+	path = strings.ReplaceAll(path, "${UID}", uid)
+	path = strings.ReplaceAll(path, "$UID", uid)
+	return filepath.Clean(os.ExpandEnv(path))
 }
 
 // newContainerEvent creates a new event based on a container
