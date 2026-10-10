@@ -1121,7 +1121,7 @@ func (r *layerStore) saveLayers(saveLocations layerLocations) error {
 		if rpath == "" {
 			return fmt.Errorf("internal error: no path for location %v", location)
 		}
-		if err := os.MkdirAll(filepath.Dir(rpath), 0o700); err != nil {
+		if err := os.MkdirAll(filepath.Dir(rpath), 0o755); err != nil {
 			return err
 		}
 		subsetLayers := make([]*Layer, 0, len(r.layers))
@@ -1139,7 +1139,7 @@ func (r *layerStore) saveLayers(saveLocations layerLocations) error {
 		if location == volatileLayerLocation {
 			opts.NoSync = true
 		}
-		if err := ioutils.AtomicWriteFileWithOpts(rpath, jldata, 0o600, &opts); err != nil {
+		if err := ioutils.AtomicWriteFileWithOpts(rpath, jldata, 0o644, &opts); err != nil {
 			return err
 		}
 		r.layerspathsModified[locationIndex] = opts.ModTime
@@ -1191,11 +1191,11 @@ func (s *store) newLayerStore(rundir, layerdir, imagedir string, driver drivers.
 	if err := os.MkdirAll(rundir, 0o700); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(layerdir, 0o700); err != nil {
+	if err := os.MkdirAll(layerdir, 0o755); err != nil {
 		return nil, err
 	}
 	if imagedir != "" {
-		if err := os.MkdirAll(imagedir, 0o700); err != nil {
+		if err := os.MkdirAll(imagedir, 0o755); err != nil {
 			return nil, err
 		}
 	}
@@ -1457,7 +1457,7 @@ func (r *layerStore) create(id string, parentLayer *Layer, names []string, mount
 	if err := os.MkdirAll(r.rundir, 0o700); err != nil {
 		return nil, -1, err
 	}
-	if err := os.MkdirAll(r.layerdir, 0o700); err != nil {
+	if err := os.MkdirAll(r.layerdir, 0o755); err != nil {
 		return nil, -1, err
 	}
 	if id == "" {
@@ -1623,7 +1623,7 @@ func (r *layerStore) create(id string, parentLayer *Layer, names []string, mount
 			cleanupFailureContext = "creating tar-split parent directory for a copy from template"
 			return nil, -1, err
 		}
-		if err = ioutils.AtomicWriteFile(r.tspath(id), templateTSdata, 0o600); err != nil {
+		if err = ioutils.AtomicWriteFile(r.tspath(id), templateTSdata, 0o644); err != nil {
 			cleanupFailureContext = "creating a tar-split copy from template"
 			return nil, -1, err
 		}
@@ -2477,7 +2477,7 @@ func createTarSplitFile(r *layerStore, layerID string) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(r.tspath(layerID)), 0o700); err != nil {
 		return nil, err
 	}
-	return os.OpenFile(r.tspath(layerID), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	return os.OpenFile(r.tspath(layerID), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 }
 
 // newMaybeStagedLayerExtraction initializes a new maybeStagedLayerExtraction. The caller
@@ -2516,7 +2516,7 @@ func (r *layerStore) stageWithUnlockedStore(sl *maybeStagedLayerExtraction, pare
 	}
 	sl.stagedTarSplit = stagedTarSplit
 
-	f, err := os.OpenFile(stagedTarSplit.Path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	f, err := os.OpenFile(stagedTarSplit.Path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}

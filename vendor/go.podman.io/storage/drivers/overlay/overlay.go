@@ -1074,7 +1074,7 @@ func (d *Driver) create(id, parent string, opts *graphdriver.CreateOpts, readOnl
 		}
 	}
 
-	if err := idtools.MkdirAllAndChownNew(dir, 0o700, idPair); err != nil {
+	if err := idtools.MkdirAllAndChownNew(dir, 0o755, idPair); err != nil {
 		return err
 	}
 

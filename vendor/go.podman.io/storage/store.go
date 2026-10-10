@@ -861,7 +861,7 @@ func GetStore(options types.StoreOptions) (Store, error) {
 			return nil, err
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(options.GraphRoot, options.GraphDriverName), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(options.GraphRoot, options.GraphDriverName), 0o755); err != nil {
 		return nil, err
 	}
 	if options.ImageStore != "" {
@@ -984,7 +984,7 @@ func (s *store) load() error {
 		imgStoreRoot = s.graphRoot
 	}
 	gipath := filepath.Join(imgStoreRoot, driverPrefix+"images")
-	if err := os.MkdirAll(gipath, 0o700); err != nil {
+	if err := os.MkdirAll(gipath, 0o755); err != nil {
 		return err
 	}
 	imageStore, err := newImageStore(gipath)
@@ -1136,7 +1136,7 @@ func (s *store) getLayerStoreLocked() (rwLayerStore, error) {
 		return nil, err
 	}
 	glpath := filepath.Join(s.graphRoot, driverPrefix+"layers")
-	if err := os.MkdirAll(glpath, 0o700); err != nil {
+	if err := os.MkdirAll(glpath, 0o755); err != nil {
 		return nil, err
 	}
 	ilpath := ""

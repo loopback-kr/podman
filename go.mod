@@ -192,3 +192,5 @@ require (
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	tags.cncf.io/container-device-interface/specs-go v1.0.0 // indirect
 )
+
+replace go.podman.io/storage => github.com/loopback-kr/container-libs/storage v1.62.1-0.20261010103040-f2f008fe696b
